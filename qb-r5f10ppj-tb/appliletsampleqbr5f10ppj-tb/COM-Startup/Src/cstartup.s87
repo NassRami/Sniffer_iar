@@ -1,0 +1,613 @@
+;------------------------------------------------------------------------------
+;       CSTARTUP source for RL78
+;
+;       This module contains the code executed before the C/C++ "main"
+;       function is called.
+;
+;       The code usually must be tailored to suit a specific hardware
+;       configuration.
+;
+;       Assembler options:
+;
+;       -D__NEAR_MODEL__        To assemble for use with compiler near
+;                               code model.
+;
+;       -D__FAR_MODEL__         To assemble for use with compiler far
+;                               code model.
+;
+;------------------------------------------------------------------------------
+;       Copyright 2011 IAR Systems AB.
+;       $Revision: 1990 $
+;------------------------------------------------------------------------------
+
+#if !defined(__NEAR_MODEL__) && !defined(__FAR_MODEL__)
+  #error One of the macros __NEAR_MODEL__ or __FAR_MODEL__ must be defined !
+#endif
+
+#include "cfi.m"
+
+;------------------------------------------------------------------------------
+;       The stack segment.
+;       The stack size is defined in the linker command file
+;------------------------------------------------------------------------------
+
+        MODULE  ?CSTARTUP
+
+        RSEG    CSTACK:DATA:ROOT(1)
+
+
+;------------------------------------------------------------------------------
+;       The interrupt vector segment.
+;       Interrupt functions with defined vectors will reserve
+;       space in this area as well as conformingly written assembly
+;       language interrupt handlers
+;------------------------------------------------------------------------------
+
+        COMMON  INTVEC:CODE:ROOT(1)
+
+        DC16    __program_start                 ; Reset vector
+
+
+;------------------------------------------------------------------------------
+;       The actual startup code
+;
+;       Entry:  __program_start
+;------------------------------------------------------------------------------
+
+        RSEG    RCODE:CODE:ROOT(0)
+
+        PUBLIC  ?C_STARTUP
+        PUBLIC  `@cstart`             ; Renesas debugger specific
+        PUBLIC  __program_start
+
+        EXTERN  __low_level_init
+        EXTERN  __MAIN_CALL
+
+        EXTERN  _NEAR_CONST_LOCATION
+PMC     DEFINE  0xFFFFE
+
+        REQUIRE __MAIN_CALL
+
+
+;------------------------------------------------------------------------------
+;       Perform the run-time initialization.
+;------------------------------------------------------------------------------
+
+?C_STARTUP:
+`@cstart`:
+__program_start:
+        DI
+
+        MOV     A, #(_NEAR_CONST_LOCATION & 1)  ; Near/Far, set mirror area
+        MOV1    CY, A.0
+        MOV1    PMC.0, CY
+        
+        MOVW    SP, #sfe(CSTACK)
+
+
+        ; Init stack segment for as the generated code may sometimes
+        ; access the 4th byte of a return address before it is initialized
+        MOVW    HL, #sfb(CSTACK)
+        MOVW    BC, #LWRD(sizeof(CSTACK))
+        CMP0    C
+        SKZ
+        INC     B
+        MOV     A, #0xCD        ; 0xCD to fool C-SPY's stack limit check
+loop_s:
+        MOV     [HL], A
+        INCW    HL
+        DEC     C
+        BNZ     loop_s
+        DEC     B
+        BNZ     loop_s
+
+        MOV     CS, #0
+
+;------------------------------------------------------------------------------
+;       Here is the place to put user initializations.
+;------------------------------------------------------------------------------
+
+;       User initialization code
+
+;------------------------------------------------------------------------------
+;       Call __low_level_init to perform initialization before initializing
+;       segments and calling main.
+;       If the function returns 0, no segment initialization should take place.
+;
+;       Link with your own version of __low_level_init to override the
+;       default action: to do nothing but return 1.
+;------------------------------------------------------------------------------
+
+#if defined(__USE_FAR_RT_CALLS__) || defined(__FAR_MODEL__)
+        CALL    F:__low_level_init
+#else
+        CALL    __low_level_init
+#endif
+        OR      A, X
+        SKNZ
+#if defined(__USE_FAR_RT_CALLS__) || defined(__FAR_MODEL__)
+        BR      F:__MAIN_CALL
+#else
+        BR      N:__MAIN_CALL
+#endif
+
+        ENDMOD
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       HUGE_Z  "uninitialized huge data" are filled with zero
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_HUGE_Z
+
+        RSEG    HUGE_Z:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_HUGE_Z
+
+__INIT_HUGE_Z:
+        MOV     ES, #BYTE3(sfb(HUGE_Z))
+        MOVW    HL, #LWRD(sfb(HUGE_Z))
+        MOV     D, #BYTE3(sizeof(HUGE_Z))
+        MOVW    BC, #LWRD(sizeof(HUGE_Z))
+        CMP0    C
+        SKZ
+        INC     B
+        CMP0    B
+        SKZ
+        INC     D
+        CLRB    A
+loop:
+        MOV     ES:[HL], A
+        INCW    HL
+        MOV     A, H
+        OR      A, L
+        CLRB    A
+        SKNZ
+        INC     ES
+        DEC     C
+        BNZ     loop
+        DEC     B
+        BNZ     loop
+        DEC     D
+        BNZ     loop
+
+        ENDMOD
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       FAR_Z  "uninitialized far data" are filled with zero
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_FAR_Z
+
+        RSEG    FAR_Z:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_FAR_Z
+
+__INIT_FAR_Z:
+        MOV     ES, #BYTE3(sfb(FAR_Z))
+        MOVW    HL, #LWRD(sfb(FAR_Z))
+        MOV     D, #BYTE3(sizeof(FAR_Z))
+        MOVW    BC, #LWRD(sizeof(FAR_Z))
+        CMP0    C
+        SKZ
+        INC     B
+        CMP0    B
+        SKZ
+        INC     D
+        CLRB    A
+loop:
+        MOV     ES:[HL], A
+        INCW    HL
+        MOV     A, H
+        OR      A, L
+        CLRB    A
+        SKNZ
+        INC     ES
+        DEC     C
+        BNZ     loop
+        DEC     B
+        BNZ     loop
+        DEC     D
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       NEAR_Z  "uninitialized near data" are filled with zero
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_NEAR_Z
+
+        RSEG    NEAR_Z:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_NEAR_Z
+
+__INIT_NEAR_Z:
+        LIMIT   sfb(NEAR_Z)>=0xF0000,1,1,"NEAR_I not placed in near memory"
+
+        MOVW    HL, #sfb(NEAR_Z)
+        MOVW    BC, #sizeof(NEAR_Z)
+        CMP0    C
+        SKZ
+        INC     B
+        CLRB    A
+loop:
+        MOV     [HL], A
+        INCW    HL
+        DEC     C
+        BNZ     loop
+        DEC     B
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       SADDR_Z "uninitialized saddr data" are filled with zero
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_SADDR_Z
+
+        RSEG    SADDR_Z:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_SADDR_Z
+
+__INIT_SADDR_Z:
+        LIMIT   sfb(SADDR_Z),0xFFE20,0xFFF1F,"SADDR_Z not within saddr memory range"
+        LIMIT   sfe(SADDR_Z),0xFFE20,0xFFF1F,"SADDR_Z not within saddr memory range"
+
+        MOVW    HL, #sfb(SADDR_Z)
+        MOV     B, #sizeof(SADDR_Z)
+        CLRB    A
+loop:
+        MOV     [HL], A
+        INCW    HL
+        DEC     B
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       WRKSEG short address work area is filled with zero
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_WRKSEG
+
+        RSEG    WRKSEG:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_WRKSEG
+
+__INIT_WRKSEG:
+        LIMIT   sfb(WRKSEG),0xFFE20,0xFFF1F,"WRKSEG not within saddr memory range"
+        LIMIT   sfe(WRKSEG),0xFFE20,0xFFF1F,"WRKSEG not within saddr memory range"
+
+        MOVW    HL, #sfb(WRKSEG)
+        MOV     B, #sizeof(WRKSEG)
+        CLRB    A
+loop:
+        MOV     [HL], A
+        INCW    HL
+        DEC     B
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       HUGE_ID is copied to HUGE_I    "initialized huge data"
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_HUGE_I
+
+        RSEG    HUGE_I:DATA(0)
+        RSEG    HUGE_ID:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_HUGE_I
+
+__INIT_HUGE_I:
+        MOV     ES, #BYTE3(sfb(HUGE_ID))
+        MOVW    HL, #LWRD(sfb(HUGE_ID))
+        MOV     CS, #BYTE3(sizeof(HUGE_ID))    ; CS is used as counter
+        MOVW    AX, #LWRD(sizeof(HUGE_ID))
+        MOVW    BC, AX
+        CMP0    C
+        SKZ
+        INC     B
+        CMP0    B
+        SKZ
+        INC     CS                            ; counter
+        MOV     A, #BYTE3(sfb(HUGE_I))
+        MOVW    DE, #LWRD(sfb(HUGE_I))
+        MOV     X, A
+loop:
+        MOV     A, ES:[HL]
+        XCH     A, X
+        XCH     A, ES
+        XCH     A, X
+        MOV     ES:[DE], A
+        XCH     A, X
+        XCH     A, ES
+        XCH     A, X
+        INCW    HL
+        MOV     A, H
+        OR      A, L
+        SKNZ
+        INC     ES
+        INCW    DE
+        MOV     A, D
+        OR      A, E
+        SKNZ
+        INC     X
+        DEC     C
+        BNZ     loop
+        DEC     B
+        BNZ     loop
+        DEC     CS                            ; counter
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       FAR_ID is copied to FAR_I    "initialized far data"
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_FAR_I
+
+        RSEG    FAR_I:DATA(0)
+        RSEG    FAR_ID:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_FAR_I
+
+__INIT_FAR_I:
+        ; First make sure FAR_I and FAR_ID have the same size
+        LIMIT   sizeof(FAR_I)-sizeof(FAR_ID),0,0,"FAR_I and FAR_ID not same size"
+        
+        ; Sanity check
+        LIMIT   (sfb(FAR_I)-sfb(FAR_ID))==0,0,0,"FAR_I and FAR_ID have same start address"
+        
+        ; FAR_I and FAR_ID must start at the same offset in a 64k page, unless sizeof
+        ; FAR_I is less than 64k, then it's enugh if both segments reside within a 64k
+        ; boundary
+        LIMIT   (((sfb(FAR_I)^sfb(FAR_ID)) & 0xFFFF) == 0) || ( (sizeof(FAR_I)< 0x10000) && (((sfb(FAR_I)^sfe(FAR_I)) & 0xF0000) == 0) && (((sfb(FAR_I)^sfe(FAR_I)) & 0xF0000) == 0) ),1,1,"FAR_I and FAR_ID have same start address"
+
+
+        
+        ;         LIMIT   (sfb(FAR_I)^sfb(FAR_ID)) & 0xFFFF,0,0,"FAR_I and FAR_ID must start at the same offset into a 64k page"
+        MOV     ES, #BYTE3(sfb(FAR_ID))
+        MOVW    HL, #LWRD(sfb(FAR_ID))
+        MOV     CS, #BYTE3(sizeof(FAR_ID))    ; CS is used as counter
+        MOVW    AX, #LWRD(sizeof(FAR_ID))
+        MOVW    BC, AX
+        CMP0    C
+        SKZ
+        INC     B
+        CMP0    B
+        SKZ
+        INC     CS                            ; counter
+        MOV     A, #BYTE3(sfb(FAR_I))
+        MOVW    DE, #LWRD(sfb(FAR_I))
+        MOV     X, A
+loop:
+        MOV     A, ES:[HL]
+        XCH     A, X
+        XCH     A, ES
+        XCH     A, X
+        MOV     ES:[DE], A
+        XCH     A, X
+        XCH     A, ES
+        XCH     A, X
+        INCW    HL
+        MOV     A, H
+        OR      A, L
+        SKNZ
+        INC     ES
+        INCW    DE
+        MOV     A, D
+        OR      A, E
+        SKNZ
+        INC     X
+        DEC     C
+        BNZ     loop
+        DEC     B
+        BNZ     loop
+        DEC     CS                            ; counter
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       NEAR_ID is copied to NEAR_I    "initialized near data"
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_NEAR_I
+
+        RSEG    NEAR_I:DATA(0)
+        RSEG    NEAR_ID:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_NEAR_I
+
+__INIT_NEAR_I:
+        LIMIT   sfb(NEAR_I)>=0xF0000,1,1,"NEAR_I not placed in near memory"
+        LIMIT   sizeof(NEAR_I)-sizeof(NEAR_ID),0,0,"NEAR_I and NEAR_ID not same size"
+
+        MOV     ES, #BYTE3(sfb(NEAR_ID))
+        MOVW    HL, #sfb(NEAR_ID)
+        MOVW    BC, #sizeof(NEAR_ID)
+        CMP0    C
+        SKZ
+        INC     B
+        MOVW    DE, #sfb(NEAR_I)
+loop:
+        MOV     A, ES:[HL]
+        MOV     [DE], A
+        INCW    HL
+        INCW    DE
+        DEC     C
+        BNZ     loop
+        DEC     B
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Segment initialization
+;
+;       SADDR_ID is copied to SADDR_I  "initialized saddr data"
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_SADDR_I
+
+        RSEG    SADDR_I:DATA(0)
+        RSEG    SADDR_ID:DATA(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_SADDR_I
+
+__INIT_SADDR_I:
+        LIMIT   sfb(SADDR_I),0xFFE20,0xFFF1F,"SADDR_I not within saddr memory range"
+        LIMIT   sfe(SADDR_I),0xFFE20,0xFFF1F,"SADDR_I not within saddr memory range"
+        LIMIT   sizeof(SADDR_I)-sizeof(SADDR_ID),0,0,"SADDR_I and SADDR_ID not same size"
+
+        MOV     ES, #BYTE3(sfb(SADDR_ID))
+        MOVW    HL, #sfb(SADDR_ID)
+        MOV     B, #sizeof(SADDR_ID)
+        MOVW    DE, #sfb(SADDR_I)
+loop:
+        MOV     A, ES:[HL]
+        MOV     [DE], A
+        INCW    HL
+        INCW    DE
+        DEC     B
+        BNZ     loop
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Initialize constructors
+;
+;       This segment part is required by the compiler when it is
+;       necessary to call constructors of global objects.
+;------------------------------------------------------------------------------
+
+        MODULE  ?__INIT_CTORS
+
+        RSEG    DIFUNCT(0)
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __INIT_CTORS
+
+        EXTERN  __call_ctors
+
+__INIT_CTORS:
+        MOV     X,  #byte3(sfe(DIFUNCT))
+        PUSH    AX
+        MOVW    AX, #lwrd(sfe(DIFUNCT))
+        PUSH    AX
+        MOV     X,  #byte3(sfb(DIFUNCT))
+        PUSH    AX
+        MOVW    AX, #lwrd(sfb(DIFUNCT))
+        PUSH    AX
+        CALL    F:__call_ctors
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Enter main
+;
+;       Call the actual "main" function
+;------------------------------------------------------------------------------
+
+        MODULE  ?__MAIN_CALL
+
+        RSEG    RCODE:CODE:NOROOT(0)
+
+        PUBLIC  __MAIN_CALL
+        PUBLIC  `@cend`             ; Renesas debugger specific
+        PUBLIC  __program_end
+
+        EXTERN  main
+        EXTERN  exit
+        CFI Block cfiBlock0 Using cfiCommon0    // preserves DE
+        CFI Function __MAIN_CALL
+        CFI ?RET Undefined
+        CFI CFA ?SP20
+
+__MAIN_CALL:
+#if defined(__FAR_MODEL__)
+        CALL    F:main
+        CALL    F:exit
+#else
+        CALL    main
+        CALL    exit
+#endif
+__program_end:
+`@cend`:
+        CFI EndBlock cfiBlock0
+
+;       STOP                            ; Should not return
+
+        ENDMOD
+
+
+;------------------------------------------------------------------------------
+;       Low level initialization function
+;
+;       Entry:  __low_level_init
+;
+;       The only action of this default version of '__low_level_init' is to
+;       return 1. By doing so it signals that normal initialization of data
+;       segments should be done.
+;
+;       A customized version of '__low_level_init' may be created in order to
+;       perform initialization before initializing segments and calling main
+;       and/or to skip initialization of data segments under certain
+;       circumstances.
+;------------------------------------------------------------------------------
+
+        MODULE  ?__low_level_init_stub
+
+#if defined(__USE_FAR_RT_CALLS__) || defined(__FAR_MODEL__)
+        RSEG    XCODE:CODE:NOROOT(0)
+#else        
+        RSEG    RCODE:CODE:NOROOT(0)
+#endif
+
+        PUBLIC  __low_level_init
+
+__low_level_init:                       ; By returning 1 this function
+        MOVW    AX, #1                  ; indicates that the normal
+        RET                             ; initialization should take place
+
+        ENDMOD
+
+        END

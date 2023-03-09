@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+
+
+<infocenter_data version="1.0">
+  <iar_template_variant>A</iar_template_variant>
+  <iar_name>QB-R5F10PPJ-TB Targetboard Samples</iar_name> 
+  <iar_title>QB-R5F10PPJ-TB Targetboard Examples</iar_title>
+  <iar_description>Ready to use example applications for E1 RL78 targetboard QB-R5F10PPJ-TB.
+                   Click on the 'Open project' link to specify the destination folder in which the workspace is to be copied to.
+                   Click on the 'Info' link to view available user documents.</iar_description>
+
+</infocenter_data>
